@@ -18,6 +18,7 @@ const app = {
   session: null,   // 勉強モード: { queue, index, answered, correct, order, pickedN, shownAt }
   test: null,      // テストモード: { nos, orders, picks, index, shownAt, graded }
   leaveArmed: false,   // テストの途中で「トップへ戻る」を 1 回押した状態
+  leaveArmedAt: 0,     // 1 回目を押した時刻（素早い 2 回タップを 2 回目として通さないため）
 };
 
 /* 0 以上 1 未満の乱数。暗号用の乱数が使えないブラウザでは Math.random に落とす */
@@ -63,6 +64,7 @@ const store = (() => {
   };
 })();
 
+/* SIMPLIFIED(2026-11-17): 記録は起動時に 1 回読み、保存のたびに全体を書く。2 つのタブで同時に解くと、後から保存した側だけが残る — 複数タブ・複数端末で使う声が出たら、保存の直前に読み直して足し合わせる */
 function loadRecords() {
   const { good, bad } = splitRecords(store.get(RECORDS_KEY));
   if (bad.length) {
@@ -165,7 +167,7 @@ function showStartError(message) {
 function renderStats() {
   const st = stats(app.records, app.nos);
   byId('stat-solved').textContent = `${st.solved} / ${st.total} 問`;
-  byId('stat-rate').textContent = st.rate === null ? 'まだ解いた問がありません' : `${st.rate}%（${st.lastOk} 問）`;
+  byId('stat-rate').textContent = st.rate === null ? '—' : `${st.rate}%（${st.lastOk} 問）`;
   byId('stat-wrong').textContent = `${st.wrong} 問`;
   byId('reset-open').disabled = Object.keys(app.records).length === 0;
   closeReset();
@@ -207,6 +209,7 @@ function showRangeError(range) {
 
 function onStart(event) {
   event.preventDefault();
+  showStartError('');
   const range = parseRange(byId('range-from').value, byId('range-to').value, app.minNo, app.maxNo);
   showRangeError(range);
   if (!range.ok) return;
@@ -241,6 +244,7 @@ function goTop() {
   app.session = null;
   app.test = null;
   fillSettingsForm(app.settings);
+  byId('reset-done').textContent = '';
   renderStats();
   showScreen('screen-top', byId('top-heading'));
 }
@@ -251,10 +255,13 @@ function onHeaderTop() {
   const inProgress = t && !t.graded && t.picks.some(p => p !== null);
   if (inProgress && !app.leaveArmed) {
     app.leaveArmed = true;
+    app.leaveArmedAt = performance.now();
     byId('to-top').textContent = '答えを捨てて戻る';
     byId('leave-note').textContent = 'テストの答えはまだ採点していません。もう一度押すと答えを捨ててトップへ戻ります。';
     return;
   }
+  /* iPhone では素早い 2 回タップがそのまま 2 回の押下になる。1 回目の直後の押下は確かめたことにしない */
+  if (inProgress && performance.now() - app.leaveArmedAt < ANSWER_GUARD_MS) return;
   goTop();
 }
 

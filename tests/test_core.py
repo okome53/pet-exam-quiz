@@ -106,8 +106,6 @@ def test_grade(tmp_path: Path) -> None:
         True, False, False]
 
 
-
-
 def test_row_title(tmp_path: Path) -> None:
     got = run_core(tmp_path, "[rowTitle({label: '③', origLabel: '③'}, 'original'),"
                              " rowTitle({label: 'A', origLabel: '③'}, 'random')]")
@@ -250,7 +248,6 @@ def test_split_records_does_not_drop_the_bad_values(tmp_path: Path) -> None:
                                                          {"no": "__proto__", "value": {"x": 1}}]
     # 文字列ごと読めなかった場合は、その文字列をそのまま退避する
     assert run_core(tmp_path, "splitRecords('{壊れ')") == {"good": {}, "bad": ["{壊れ"]}
-
 
 
 # ---- 実データ 141 問: 画面の位置で選んだ答えの判定と解説の対応がずれないこと ----

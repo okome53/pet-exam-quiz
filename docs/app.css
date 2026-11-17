@@ -147,7 +147,6 @@ h2.form-heading, #stats-heading { font-size: 1.0625rem; margin: 0 0 .5rem; }
 button.danger { background: var(--ng); color: #ffffff; border-color: var(--ng); font-weight: 700; }
 @media (prefers-color-scheme: dark) { button.danger { color: #1c1a17; } }
 button:disabled { opacity: .45; cursor: default; }
-.option input[type="checkbox"] { accent-color: var(--accent); }
 
 .button-row { display: flex; gap: .6rem; margin-top: 1rem; }
 .button-row > button { flex: 1; }
