@@ -14,18 +14,39 @@
   <p class="site-title">愛玩動物飼養管理士2級 問題演習</p>
   <button type="button" id="to-top" class="ghost" hidden>トップへ戻る</button>
 </header>
+<p id="leave-note" class="leave-note" aria-live="polite"></p>
 
 <main id="main">
   <noscript><p class="notice">このページは JavaScript で動きます。ブラウザの設定で JavaScript を有効にしてください。</p></noscript>
   <p id="fatal" class="notice" role="alert" hidden></p>
 
   <section id="screen-top" aria-labelledby="top-heading" hidden>
-    <h1 id="top-heading" tabindex="-1">問題演習の設定</h1>
+    <h1 id="top-heading" tabindex="-1">問題演習</h1>
+
+    <section id="stats" class="stats" aria-labelledby="stats-heading">
+      <h2 id="stats-heading" tabindex="-1">これまでの記録</h2>
+      <dl class="stat-list">
+        <div><dt>解いた問</dt><dd id="stat-solved"></dd></div>
+        <div><dt>最後の解答が正解の割合</dt><dd id="stat-rate"></dd></div>
+        <div><dt>間違えた問（最後の解答が不正解）</dt><dd id="stat-wrong"></dd></div>
+      </dl>
+      <button type="button" id="reset-open" class="ghost">記録を消す</button>
+      <div id="reset-confirm" class="reset-confirm" hidden>
+        <p id="reset-text"></p>
+        <div class="button-row">
+          <button type="button" id="reset-yes" class="danger">消す</button>
+          <button type="button" id="reset-no">やめる</button>
+        </div>
+      </div>
+      <p id="reset-done" class="hint" aria-live="polite"></p>
+    </section>
+
+    <h2 class="form-heading">設定</h2>
     <form id="settings-form" novalidate>
       <fieldset>
         <legend>モード</legend>
         <label class="option"><input type="radio" name="mode" value="study" checked> 勉強モード（1 問ずつ解いて、すぐ解説を読む）</label>
-        <label class="option is-disabled"><input type="radio" name="mode" value="test" disabled> テストモード（10 問まとめて採点）— 準備中</label>
+        <label class="option"><input type="radio" name="mode" value="test"> テストモード（10 問まとめて解いて、最後に採点）</label>
       </fieldset>
 
       <fieldset>
@@ -53,13 +74,21 @@
         <p id="range-error" class="error" aria-live="polite" hidden></p>
       </fieldset>
 
-      <p id="storage-note" class="hint" hidden>このブラウザでは設定を保存できません。ページを閉じると設定は元に戻ります。</p>
+      <fieldset>
+        <legend>絞り込み</legend>
+        <label class="option"><input type="checkbox" id="wrong-only"> 間違えた問だけ（最後の解答が不正解の問）</label>
+      </fieldset>
+
+      <p id="storage-note" class="hint" hidden>このブラウザでは記録と設定を保存できません。ページを閉じると元に戻ります。</p>
+      <p id="start-error" class="error" tabindex="-1" aria-live="polite" hidden></p>
       <button type="submit" id="start" class="primary">はじめる</button>
     </form>
   </section>
 
   <section id="screen-study" aria-label="勉強モード" hidden></section>
   <section id="screen-finish" aria-label="結果" hidden></section>
+  <section id="screen-test" aria-label="テストモード" hidden></section>
+  <section id="screen-score" aria-label="採点結果" hidden></section>
 </main>
 
 

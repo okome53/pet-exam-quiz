@@ -137,13 +137,119 @@ def test_parse_range(tmp_path: Path, from_text: str, to_text: str, expected) -> 
 
 
 def test_normalize_settings(tmp_path: Path) -> None:
-    default = {"order": "original", "choiceOrder": "original", "from": 1, "to": 141}
-    good = {"order": "random", "choiceOrder": "random", "from": 10, "to": 20}
+    default = {"mode": "study", "order": "original", "choiceOrder": "original", "from": 1, "to": 141,
+               "wrongOnly": False}
+    good = {"mode": "test", "order": "random", "choiceOrder": "random", "from": 10, "to": 20, "wrongOnly": True}
     cases = ["null", "[]", "'x'", json.dumps(good), json.dumps({**good, "order": "x"}),
-             json.dumps({**good, "from": 30}), json.dumps({**good, "to": 999}), json.dumps({**good, "from": "10"})]
+             json.dumps({**good, "from": 30}), json.dumps({**good, "to": 999}), json.dumps({**good, "from": "10"}),
+             json.dumps({**good, "mode": "exam"}), json.dumps({**good, "wrongOnly": "true"})]
     got = run_core(tmp_path, f"[{', '.join(cases)}].map(s => normalizeSettings(s, 1, 141))")
     assert got == [default, default, default, good, {**good, "order": "original"},
-                   {**good, "from": 1, "to": 141}, {**good, "from": 1, "to": 141}, {**good, "from": 1, "to": 141}]
+                   {**good, "from": 1, "to": 141}, {**good, "from": 1, "to": 141}, {**good, "from": 1, "to": 141},
+                   {**good, "mode": "study"}, {**good, "wrongOnly": False}]
+
+
+# ---- テストモード ----
+POOL = list(range(5, 31))   # 範囲で絞った後の問番号（元の順番）
+
+
+def test_build_test_original_takes_the_head(tmp_path: Path) -> None:
+    got = run_core(tmp_path, f"[buildTest({POOL}, 10, 'original', {SEEDED_RNG}),"
+                             f" buildTest([3, 4, 5], 10, 'original', {SEEDED_RNG}), buildTest([], 10, 'random', {SEEDED_RNG})]")
+    assert got == [POOL[:10], [3, 4, 5], []]   # 足りなければある分だけ
+
+
+def test_build_test_random_has_no_duplicates(tmp_path: Path) -> None:
+    exprs = [f"buildTest({POOL}, 10, 'random', (() => {{ let s = {seed}; return () => (s = (s * 16807) % 2147483647)"
+             f" / 2147483647; }})())" for seed in SEEDS]
+    results = run_core(tmp_path, f"[{', '.join(exprs)}]")
+    for got in results:
+        assert len(got) == 10 and len(set(got)) == 10 and set(got) <= set(POOL)
+    assert any(got != POOL[:10] for got in results)
+    assert len({tuple(g) for g in results}) > 1   # 種ごとに違う 10 問になる
+    small = run_core(tmp_path, f"buildTest([7, 8, 9], 10, 'random', {SEEDED_RNG})")
+    assert sorted(small) == [7, 8, 9]
+
+
+def test_grade_test(tmp_path: Path) -> None:
+    got = run_core(tmp_path, "gradeTest([{no: 3, answer: 2}, {no: 9, answer: 5}, {no: 1, answer: 1}], [2, 4, null])")
+    assert got == {"total": 3, "correct": 1, "results": [
+        {"no": 3, "pickedN": 2, "ok": True}, {"no": 9, "pickedN": 4, "ok": False}, {"no": 1, "pickedN": None, "ok": False}]}
+
+
+# ---- 解答の記録 ----
+def test_record_answer_counts_and_keeps_the_original(tmp_path: Path) -> None:
+    got = run_core(tmp_path, """(() => {
+      const r0 = {};
+      const r1 = recordAnswer(r0, 12, false, 100);
+      const r2 = recordAnswer(r1, 12, true, 200);
+      const r3 = recordAnswer(r2, 5, true, 300);
+      const r4 = recordAnswer(r3, 12, false, 400);
+      return [r0, r1, r2, r4];
+    })()""")
+    r0, r1, r2, r4 = got
+    assert r0 == {}   # 元の記録は書き換えない
+    assert r1 == {"12": {"n": 1, "ok": 0, "last": False, "at": 100}}
+    assert r2 == {"12": {"n": 2, "ok": 1, "last": True, "at": 200}}
+    assert r4 == {"12": {"n": 3, "ok": 1, "last": False, "at": 400}, "5": {"n": 1, "ok": 1, "last": True, "at": 300}}
+
+
+def test_stats(tmp_path: Path) -> None:
+    records = {"1": {"n": 2, "ok": 1, "last": True, "at": 1}, "2": {"n": 1, "ok": 0, "last": False, "at": 1},
+               "3": {"n": 3, "ok": 3, "last": True, "at": 1}, "999": {"n": 1, "ok": 0, "last": False, "at": 1}}
+    got = run_core(tmp_path, f"[stats({json.dumps(records)}, [1, 2, 3, 4]), stats({{}}, [1, 2, 3])]")
+    # データに無い問（999）の記録は数えない
+    assert got[0] == {"total": 4, "solved": 3, "lastOk": 2, "wrong": 1, "rate": 67}
+    assert got[1] == {"total": 3, "solved": 0, "lastOk": 0, "wrong": 0, "rate": None}
+
+
+def test_wrong_only_filters_by_the_last_answer(tmp_path: Path) -> None:
+    records = {"2": {"n": 1, "ok": 0, "last": False, "at": 1}, "4": {"n": 2, "ok": 1, "last": True, "at": 1},
+               "6": {"n": 3, "ok": 1, "last": False, "at": 1}, "12": {"n": 1, "ok": 0, "last": False, "at": 1}}
+    opts = {"from": 1, "to": 10, "order": "original", "wrongOnly": True}
+    got = run_core(tmp_path, f"[buildQueue({json.dumps(QS)}, {json.dumps(opts)}, {SEEDED_RNG}, {json.dumps(records)}),"
+                             f" buildQueue({json.dumps(QS)}, {json.dumps(opts)}, {SEEDED_RNG}, {{}}),"
+                             f" buildQueue({json.dumps(QS)}, {json.dumps({**opts, 'wrongOnly': False})}, {SEEDED_RNG},"
+                             f" {json.dumps(records)})]")
+    # 12 は範囲の外・4 は最後に正解・解いていない問は入らない
+    assert got == [[2, 6], [], list(range(1, 11))]
+
+
+GOOD_RECORD = {"n": 2, "ok": 1, "last": True, "at": 1700000000000}
+
+
+@pytest.mark.parametrize(("raw", "good_keys", "bad_count"), [
+    ("null", [], 0),
+    ("undefined", [], 0),
+    ("{}", [], 0),
+    (json.dumps({"3": GOOD_RECORD}), ["3"], 0),
+    ("'{壊れた JSON'", [], 1),          # JSON として読めなかった文字列は全体を退避
+    ("[1, 2]", [], 1),
+    ("42", [], 1),
+    (json.dumps({"3": GOOD_RECORD, "x": GOOD_RECORD, "0": GOOD_RECORD, "03": GOOD_RECORD}), ["3"], 3),
+    (json.dumps({"3": {**GOOD_RECORD, "ok": 3}}), [], 1),          # 正解回数 ＞ 回数
+    (json.dumps({"3": {**GOOD_RECORD, "n": 0, "ok": 0}}), [], 1),
+    (json.dumps({"3": {**GOOD_RECORD, "n": 1.5}}), [], 1),
+    (json.dumps({"3": {**GOOD_RECORD, "last": "true"}}), [], 1),
+    (json.dumps({"3": {**GOOD_RECORD, "at": "昨日"}}), [], 1),
+    (json.dumps({"3": {**GOOD_RECORD, "extra": 1}}), [], 1),
+    (json.dumps({"3": None, "4": [], "5": GOOD_RECORD}), ["5"], 2),
+])
+def test_split_records_keeps_bad_entries(tmp_path: Path, raw: str, good_keys: list[str], bad_count: int) -> None:
+    got = run_core(tmp_path, f"splitRecords({raw})")
+    assert sorted(got["good"]) == good_keys
+    assert all(v == GOOD_RECORD for v in got["good"].values())
+    assert len(got["bad"]) == bad_count
+
+
+def test_split_records_does_not_drop_the_bad_values(tmp_path: Path) -> None:
+    raw = {"7": GOOD_RECORD, "8": {"n": "壊れ"}, "__proto__": {"x": 1}}
+    got = run_core(tmp_path, f"splitRecords(JSON.parse({json.dumps(json.dumps(raw))}))")
+    assert got["good"] == {"7": GOOD_RECORD}
+    assert sorted(got["bad"], key=lambda b: b["no"]) == [{"no": "8", "value": {"n": "壊れ"}},
+                                                         {"no": "__proto__", "value": {"x": 1}}]
+    # 文字列ごと読めなかった場合は、その文字列をそのまま退避する
+    assert run_core(tmp_path, "splitRecords('{壊れ')") == {"good": {}, "bad": ["{壊れ"]}
 
 
 
@@ -275,5 +381,16 @@ def test_no_robots_txt_and_nojekyll_present() -> None:
     assert (DOCS / ".nojekyll").exists()
 
 
-def test_settings_key_is_namespaced() -> None:
-    assert "const SETTINGS_KEY = 'pet-exam-quiz:v1:settings';" in APP_PATH.read_text(encoding="utf-8")
+def test_storage_keys_are_namespaced() -> None:
+    app = APP_PATH.read_text(encoding="utf-8")
+    assert "const SETTINGS_KEY = 'pet-exam-quiz:v1:settings';" in app
+    assert "const RECORDS_KEY = 'pet-exam-quiz:v1:records';" in app
+    assert "const RECORDS_BAD_KEY = 'pet-exam-quiz:v1:records-bad';" in app
+    keys = re.findall(r"""'(pet-exam-quiz:[^']*)'""", app)
+    assert keys and all(k.startswith("pet-exam-quiz:") for k in keys)
+
+
+def test_no_browser_dialogs() -> None:
+    """記録のリセットは画面内の 2 段階ボタンで行い、ブラウザの確認ダイアログは使わない。"""
+    app = APP_PATH.read_text(encoding="utf-8")
+    assert re.search(r"""\b(?:confirm|alert|prompt)\(""", app) is None

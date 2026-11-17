@@ -7,6 +7,8 @@
 const CIRCLED = ['①', '②', '③', '④', '⑤'];
 const LETTERS = ['A', 'B', 'C', 'D', 'E'];
 const ORDERS = ['original', 'random'];
+const MODES = ['study', 'test'];
+const TEST_SIZE = 10;
 
 function shuffle(list, rng) {
   const out = list.slice();
@@ -19,12 +21,24 @@ function shuffle(list, rng) {
 
 /* 出題の並び（問番号の配列）。questions は問番号の順で届くので、元の順番はその順のまま。
    opts = { from, to, order: 'original'|'random' }（from・to は問番号で、両端を含む） */
-function buildQueue(questions, opts, rng) {
+function buildQueue(questions, opts, rng, records) {
   const nos = questions
     .filter(q => q.no >= opts.from && q.no <= opts.to)
-    // 絞り込みを足すのはここ。Sprint 3 の「間違えた問だけ」は、記録を引数で受け取って .filter を 1 段足す
+    .filter(q => !opts.wrongOnly || isWrong(records, q.no))
     .map(q => q.no);
   return opts.order === 'random' ? shuffle(nos, rng) : nos;
+}
+
+/* テストの出題（問番号の配列）。pool は範囲と絞り込みを済ませた問番号（元の順番）。
+   重複なしで size 問。足りなければある分だけ。元の順番なら pool の頭から、ランダムなら pool から無作為に */
+function buildTest(pool, size, order, rng) {
+  return (order === 'random' ? shuffle(pool, rng) : pool.slice()).slice(0, size);
+}
+
+/* テストの採点。qs は出題した問（画面の順）、picks はそれぞれで選んだ元の番号（未解答は null） */
+function gradeTest(qs, picks) {
+  const results = qs.map((q, i) => ({ no: q.no, pickedN: picks[i], ok: grade(q, picks[i]) }));
+  return { total: qs.length, correct: results.filter(r => r.ok).length, results };
 }
 
 /* 選択肢を画面に並べる順（元の番号 n の配列） */
@@ -94,14 +108,87 @@ function normalizeSettings(raw, min, max) {
   const order = v => (ORDERS.includes(v) ? v : 'original');
   const rangeOk = Number.isInteger(s.from) && Number.isInteger(s.to) && min <= s.from && s.from <= s.to && s.to <= max;
   return {
+    mode: MODES.includes(s.mode) ? s.mode : 'study',
     order: order(s.order), choiceOrder: order(s.choiceOrder),
     from: rangeOk ? s.from : min, to: rangeOk ? s.to : max,
+    wrongOnly: s.wrongOnly === true,
+  };
+}
+
+/* ---- 解答の記録 ----
+   形: { "<問番号>": { n: 解いた回数, ok: 正解した回数, last: 最後の解答が正解か, at: 最後に解いた時刻（ミリ秒） } }
+   時刻は呼び出し側が渡す（このファイルは現在時刻に触れない） */
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function isRecordOk(r) {
+  return isPlainObject(r)
+    && Number.isInteger(r.n) && r.n >= 1
+    && Number.isInteger(r.ok) && r.ok >= 0 && r.ok <= r.n
+    && typeof r.last === 'boolean'
+    && Number.isFinite(r.at) && r.at >= 0
+    && Object.keys(r).length === 4;
+}
+
+/* 保存してあった記録を、使えるもの（good）と形の違うもの（bad）に分ける。bad は捨てずに呼び出し側が退避する。
+   全体がオブジェクトでなければ、全体を 1 件の bad にする（何も保存されていない null・undefined は空） */
+function splitRecords(raw) {
+  const good = {};
+  if (raw === null || raw === undefined) return { good, bad: [] };
+  if (!isPlainObject(raw)) return { good, bad: [raw] };
+  const bad = [];
+  for (const key of Object.keys(raw)) {
+    if (/^[1-9]\d{0,3}$/.test(key) && isRecordOk(raw[key])) {
+      const r = raw[key];
+      good[key] = { n: r.n, ok: r.ok, last: r.last, at: r.at };
+    } else {
+      bad.push({ no: key, value: raw[key] });
+    }
+  }
+  return { good, bad };
+}
+
+function recordOf(records, no) {
+  return records && Object.prototype.hasOwnProperty.call(records, String(no)) ? records[String(no)] : null;
+}
+
+/* 最後の解答が不正解の問か（一度も解いていない問は含めない） */
+function isWrong(records, no) {
+  const r = recordOf(records, no);
+  return r !== null && r.last === false;
+}
+
+/* 1 問の解答を足した新しい記録を返す（元の records は書き換えない） */
+function recordAnswer(records, no, correct, at) {
+  const prev = recordOf(records, no);
+  const next = Object.assign({}, records);
+  next[String(no)] = {
+    n: (prev ? prev.n : 0) + 1, ok: (prev ? prev.ok : 0) + (correct ? 1 : 0), last: correct === true, at,
+  };
+  return next;
+}
+
+/* トップに出す集計。nos は今のデータにある問番号（データに無い問の記録は数えない）。
+   rate は「最後の解答が正解」の割合（％・整数に丸める）。解いた問が 0 なら null */
+function stats(records, nos) {
+  let solved = 0, lastOk = 0;
+  for (const no of nos) {
+    const r = recordOf(records, no);
+    if (!r) continue;
+    solved += 1;
+    if (r.last) lastOk += 1;
+  }
+  return {
+    total: nos.length, solved, lastOk, wrong: solved - lastOk,
+    rate: solved ? Math.round((lastOk / solved) * 100) : null,
   };
 }
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    shuffle, buildQueue, choiceOrder, choiceLabel, circled, grade, explanationRows, rowTitle,
-    paragraphs, toInt, parseRange, normalizeSettings,
+    TEST_SIZE, shuffle, buildQueue, buildTest, gradeTest, choiceOrder, choiceLabel, circled, grade, explanationRows,
+    rowTitle, paragraphs, toInt, parseRange, normalizeSettings,
+    isRecordOk, splitRecords, isWrong, recordAnswer, stats,
   };
 }
