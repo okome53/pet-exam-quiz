@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<title>愛玩動物飼養管理士2級 問題演習</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="site-head">
+  <p class="site-title">愛玩動物飼養管理士2級 問題演習</p>
+  <button type="button" id="to-top" class="ghost" hidden>トップへ戻る</button>
+</header>
+
+<main id="main">
+  <noscript><p class="notice">このページは JavaScript で動きます。ブラウザの設定で JavaScript を有効にしてください。</p></noscript>
+  <p id="fatal" class="notice" role="alert" hidden></p>
+
+  <section id="screen-top" aria-labelledby="top-heading" hidden>
+    <h1 id="top-heading" tabindex="-1">問題演習の設定</h1>
+    <form id="settings-form" novalidate>
+      <fieldset>
+        <legend>モード</legend>
+        <label class="option"><input type="radio" name="mode" value="study" checked> 勉強モード（1 問ずつ解いて、すぐ解説を読む）</label>
+        <label class="option is-disabled"><input type="radio" name="mode" value="test" disabled> テストモード（10 問まとめて採点）— 準備中</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>出題順</legend>
+        <label class="option"><input type="radio" name="order" value="original"> 元の順番</label>
+        <label class="option"><input type="radio" name="order" value="random"> ランダム</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>選択肢の順</legend>
+        <label class="option"><input type="radio" name="choice-order" value="original"> 元の順番（①〜⑤）</label>
+        <label class="option"><input type="radio" name="choice-order" value="random"> ランダム（A〜E。解説に元の番号も出します）</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>出題する範囲（問番号）</legend>
+        <div class="range">
+          <label for="range-from">はじめ</label>
+          <input id="range-from" type="text" inputmode="numeric" autocomplete="off" aria-describedby="range-hint range-error">
+          <span aria-hidden="true">〜</span>
+          <label for="range-to">おわり</label>
+          <input id="range-to" type="text" inputmode="numeric" autocomplete="off" aria-describedby="range-hint range-error">
+        </div>
+        <p id="range-hint" class="hint"></p>
+        <p id="range-error" class="error" aria-live="polite" hidden></p>
+      </fieldset>
+
+      <p id="storage-note" class="hint" hidden>このブラウザでは設定を保存できません。ページを閉じると設定は元に戻ります。</p>
+      <button type="submit" id="start" class="primary">はじめる</button>
+    </form>
+  </section>
+
+  <section id="screen-study" aria-label="勉強モード" hidden></section>
+  <section id="screen-finish" aria-label="結果" hidden></section>
+</main>
+
+
+<script src="questions.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
