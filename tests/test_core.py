@@ -373,6 +373,14 @@ def test_ids_used_by_app_exist_in_index_html() -> None:
     assert names and all(f'name="{n}"' in html for n in names)
 
 
+def test_favicon_is_local() -> None:
+    """タブのアイコンは同じ場所の SVG を指す（無いとブラウザがサイトの最上位の favicon.ico を探して 404 になる）。"""
+    html = INDEX_PATH.read_text(encoding="utf-8")
+    assert '<link rel="icon" href="favicon.svg" type="image/svg+xml">' in html
+    svg = (DOCS / "favicon.svg").read_text(encoding="utf-8")
+    assert svg.startswith("<svg") and "<script" not in svg and "href" not in svg
+
+
 def test_no_robots_txt_and_nojekyll_present() -> None:
     assert not (DOCS / "robots.txt").exists()   # noindex の meta だけにする（2026-11-17 本人判断）
     assert (DOCS / ".nojekyll").exists()
