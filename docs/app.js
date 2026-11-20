@@ -7,11 +7,16 @@ const SETTINGS_KEY = 'pet-exam-quiz:v1:settings';
 const RECORDS_KEY = 'pet-exam-quiz:v1:records';
 /* 形の違う記録は集計に使わず、消さずにここへ退避する */
 const RECORDS_BAD_KEY = 'pet-exam-quiz:v1:records-bad';
+/* 最後に選んだ問題集の id。141 問の問題集（main）の記録は上の 2 つのまま、予想問題は末尾に :<id> を付けた場所に分けて持つ */
+const SET_KEY = 'pet-exam-quiz:v1:set';
+const MAIN_SET_ID = 'main';
 const SCREENS = ['screen-top', 'screen-study', 'screen-finish', 'screen-test', 'screen-score'];
 /* 問を出してからこの時間は解答を受け付けない（前の画面のボタンの二度押し対策。人が読んで選ぶより十分短い） */
 const ANSWER_GUARD_MS = 400;
 
 const app = {
+  sets: [],        // { id, title, questions }。先頭が 141 問の問題集
+  setId: MAIN_SET_ID,
   questions: [], byNo: new Map(), nos: [], minNo: 1, maxNo: 1,
   settings: null,
   records: {},     // core.js の splitRecords を通した記録
@@ -65,20 +70,23 @@ const store = (() => {
 })();
 
 /* SIMPLIFIED(2026-11-17): 記録は起動時に 1 回読み、保存のたびに全体を書く。2 つのタブで同時に解くと、後から保存した側だけが残る — 複数タブ・複数端末で使う声が出たら、保存の直前に読み直して足し合わせる */
-function loadRecords() {
-  const { good, bad } = splitRecords(store.get(RECORDS_KEY));
+function recordsKey(id) { return id === MAIN_SET_ID ? RECORDS_KEY : `${RECORDS_KEY}:${id}`; }
+function recordsBadKey(id) { return id === MAIN_SET_ID ? RECORDS_BAD_KEY : `${RECORDS_BAD_KEY}:${id}`; }
+
+function loadRecords(id) {
+  const { good, bad } = splitRecords(store.get(recordsKey(id)));
   if (bad.length) {
     // 前回までの退避分に足す。退避先の中身が配列でなくても捨てない
-    const kept = store.get(RECORDS_BAD_KEY);
+    const kept = store.get(recordsBadKey(id));
     const list = Array.isArray(kept) ? kept : (kept === null ? [] : [kept]);
-    store.set(RECORDS_BAD_KEY, list.concat(bad));
-    store.set(RECORDS_KEY, good);
+    store.set(recordsBadKey(id), list.concat(bad));
+    store.set(recordsKey(id), good);
   }
   return good;
 }
 
 function saveRecords() {
-  store.set(RECORDS_KEY, app.records);
+  store.set(recordsKey(app.setId), app.records);
   showStorageNote();
 }
 
@@ -147,6 +155,7 @@ function radioValue(name, fallback) {
 }
 
 function fillSettingsForm(s) {
+  setRadio('set', app.setId);
   setRadio('mode', s.mode);
   setRadio('order', s.order);
   setRadio('choice-order', s.choiceOrder);
@@ -164,8 +173,11 @@ function showStartError(message) {
 }
 
 /* ---- トップの記録 ---- */
+function currentSet() { return app.sets.find(x => x.id === app.setId); }
+
 function renderStats() {
   const st = stats(app.records, app.nos);
+  byId('stats-heading').textContent = `これまでの記録（${currentSet().title}）`;
   byId('stat-solved').textContent = `${st.solved} / ${st.total} 問`;
   byId('stat-rate').textContent = st.rate === null ? '—' : `${st.rate}%（${st.lastOk} 問）`;
   byId('stat-wrong').textContent = `${st.wrong} 問`;
@@ -176,7 +188,7 @@ function renderStats() {
 /* 記録を消すのは 2 段階（ブラウザの確認ダイアログは使わない） */
 function openReset() {
   const st = stats(app.records, app.nos);
-  byId('reset-text').textContent = `これまでの記録（解いた問 ${st.solved} 問）をすべて消します。消した記録は元に戻せません。`;
+  byId('reset-text').textContent = `${currentSet().title}の記録（解いた問 ${st.solved} 問）をすべて消します。ほかの問題集の記録は消えません。消した記録は元に戻せません。`;
   byId('reset-open').hidden = true;
   byId('reset-confirm').hidden = false;
   byId('reset-done').textContent = '';
@@ -192,7 +204,7 @@ function doReset() {
   app.records = {};
   saveRecords();
   renderStats();
-  byId('reset-done').textContent = '記録を消しました。';
+  byId('reset-done').textContent = `${currentSet().title}の記録を消しました。`;
   byId('stats-heading').focus();
 }
 
@@ -533,6 +545,47 @@ function renderScore() {
   return heading;
 }
 
+/* ---- 問題集 ---- */
+/* 問題集を切り替える。問・範囲・記録をその問題集のものにする */
+function selectSet(id) {
+  app.setId = id;
+  app.questions = currentSet().questions;
+  app.byNo = new Map(app.questions.map(q => [q.no, q]));
+  app.nos = app.questions.map(q => q.no);
+  app.minNo = Math.min(...app.nos);
+  app.maxNo = Math.max(...app.nos);
+  app.records = loadRecords(id);
+  byId('range-hint').textContent = `${app.minNo}〜${app.maxNo} の問番号で指定します（全 ${app.questions.length} 問）。`;
+}
+
+/* 問題集のラジオボタン（データから作る）。選択肢の数も添える（141 問は 5 択、予想問題は 4 択） */
+function renderSetChoices() {
+  const field = byId('set-field');
+  for (const s of app.sets) {
+    const input = el('input');
+    input.type = 'radio';
+    input.name = 'set';
+    input.value = s.id;
+    input.addEventListener('change', () => onSetChange(s.id));
+    const label = el('label', 'option');
+    label.append(input, ` ${s.title}（${s.questions.length} 問・${s.questions[0].choices.length} 択）`);
+    field.appendChild(label);
+  }
+}
+
+/* 切り替えたら、範囲はその問題集の全体に戻す */
+function onSetChange(id) {
+  selectSet(id);
+  store.set(SET_KEY, id);
+  byId('range-from').value = String(app.minNo);
+  byId('range-to').value = String(app.maxNo);
+  showRangeError({ ok: true });
+  showStartError('');
+  byId('reset-done').textContent = '';
+  renderStats();
+  showStorageNote();
+}
+
 /* ---- 起動 ---- */
 function dataOk() {
   return typeof QUESTIONS !== 'undefined' && QUESTIONS && QUESTIONS.meta
@@ -544,14 +597,14 @@ function init() {
     showFatal('問題データを読み込めませんでした。ページを読み込み直してください。');
     return;
   }
-  app.questions = QUESTIONS.questions;
-  app.byNo = new Map(app.questions.map(q => [q.no, q]));
-  app.nos = app.questions.map(q => q.no);
-  app.minNo = Math.min(...app.nos);
-  app.maxNo = Math.max(...app.nos);
+  /* mock.js が読めなかったときは、141 問の問題集だけで動く */
+  const mocks = typeof MOCK_SETS !== 'undefined' && Array.isArray(MOCK_SETS) ? MOCK_SETS : [];
+  app.sets = [{ id: MAIN_SET_ID, title: 'ankimaker の問題集', questions: QUESTIONS.questions }]
+    .concat(mocks.filter(x => x && typeof x.id === 'string' && Array.isArray(x.questions) && x.questions.length));
+  const saved = store.get(SET_KEY);
+  selectSet(app.sets.some(x => x.id === saved) ? saved : MAIN_SET_ID);
   app.settings = normalizeSettings(store.get(SETTINGS_KEY), app.minNo, app.maxNo);
-  app.records = loadRecords();
-  byId('range-hint').textContent = `${app.minNo}〜${app.maxNo} の問番号で指定します（全 ${app.questions.length} 問）。`;
+  renderSetChoices();
   byId('settings-form').addEventListener('submit', onStart);
   byId('to-top').addEventListener('click', onHeaderTop);
   byId('reset-open').addEventListener('click', openReset);

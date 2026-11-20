@@ -44,6 +44,10 @@
 
     <h2 class="form-heading">設定</h2>
     <form id="settings-form" novalidate>
+      <fieldset id="set-field">
+        <legend>問題集</legend>
+      </fieldset>
+
       <fieldset>
         <legend>モード</legend>
         <label class="option"><input type="radio" name="mode" value="study" checked> 勉強モード（1 問ずつ解いて、すぐ解説を読む）</label>
@@ -58,8 +62,8 @@
 
       <fieldset>
         <legend>選択肢の順</legend>
-        <label class="option"><input type="radio" name="choice-order" value="original"> 元の順番（①〜⑤）</label>
-        <label class="option"><input type="radio" name="choice-order" value="random"> ランダム（A〜E。解説に元の番号も出します）</label>
+        <label class="option"><input type="radio" name="choice-order" value="original"> 元の順番（①②③…）</label>
+        <label class="option"><input type="radio" name="choice-order" value="random"> ランダム（A・B・C…。解説に元の番号も出します）</label>
       </fieldset>
 
       <fieldset>
@@ -94,6 +98,7 @@
 
 
 <script src="questions.js"></script>
+<script src="mock.js"></script>
 <script src="core.js"></script>
 <script src="app.js"></script>
 </body>

@@ -20,6 +20,7 @@ DOCS = REPO_ROOT / "docs"
 CORE_PATH = DOCS / "core.js"
 APP_PATH = DOCS / "app.js"
 DATA_JS_PATH = DOCS / "questions.js"
+MOCK_JS_PATH = DOCS / "mock.js"
 INDEX_PATH = DOCS / "index.html"
 
 # 純関数のファイルに置かないもの（DOM・保存・現在時刻・乱数・タイマー）
@@ -320,9 +321,9 @@ def test_app_js_parses() -> None:
 
 
 def test_scripts_share_the_page_without_name_clashes(tmp_path: Path) -> None:
-    """index.html は questions.js・core.js・app.js を順に読む。3 つは同じ大域で動くので、宣言がぶつからないこと。"""
+    """index.html は questions.js・mock.js・core.js・app.js を順に読む。3 つは同じ大域で動くので、宣言がぶつからないこと。"""
     joined = tmp_path / "joined.js"
-    joined.write_text("\n".join(p.read_text(encoding="utf-8") for p in (DATA_JS_PATH, CORE_PATH, APP_PATH)),
+    joined.write_text("\n".join(p.read_text(encoding="utf-8") for p in (DATA_JS_PATH, MOCK_JS_PATH, CORE_PATH, APP_PATH)),
                       encoding="utf-8")
     result = subprocess.run([_node(), "--check", str(joined)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
@@ -354,7 +355,8 @@ def test_index_html_head() -> None:
 def test_index_html_has_no_inline_code_or_root_paths() -> None:
     html = INDEX_PATH.read_text(encoding="utf-8")
     scripts = re.findall(r"<script\b[^>]*>", html)
-    assert scripts == ['<script src="questions.js">', '<script src="core.js">', '<script src="app.js">']
+    assert scripts == ['<script src="questions.js">', '<script src="mock.js">', '<script src="core.js">',
+                       '<script src="app.js">']
     assert "style=" not in html and "<style" not in html
     assert re.search(r"""\bon[a-z]+\s*=""", html) is None   # onclick= などのインラインの処理
     # GitHub Pages ではサイトが /pet-exam-quiz/ の下に載るので、/ で始まる参照は壊れる
@@ -370,7 +372,8 @@ def test_ids_used_by_app_exist_in_index_html() -> None:
     used |= set(re.findall(r"""SCREENS = \[([^\]]*)\]""", app)[0].replace("'", "").replace(" ", "").split(","))
     assert used and sorted(used - set(ids)) == []
     names = set(re.findall(r"""(?:setRadio|radioValue)\('([^']+)'""", app))
-    assert names and all(f'name="{n}"' in html for n in names)
+    made = set(re.findall(r"""\.name = '([^']+)'""", app))   # 問題集のラジオボタンは app.js がデータから作る
+    assert names and all(f'name="{n}"' in html or n in made for n in names)
 
 
 def test_favicon_is_local() -> None:
